@@ -1,0 +1,503 @@
+---
+title: "Allergo Argenteuil"
+subtitle: "Rapport Statistique - V 1.1"
+author: "D\\textsuperscript{r} Philippe \\textsc{Michel} -- USCR, Hôpital NOVO"
+lang: fr
+format:
+ titlepage-pdf:
+  titlepage: bg-image
+  titlepage-bg-image: "novo_usrc.png"
+  logo-space-after: "0\\baselineskip"
+  documentclass: scrreprt
+  number-sections: true
+  titlepage-footer:  "Ines \\textsc{Koubaa}  \\newline D\\textsuperscript{r} Gaëtan \\textsc{Plantefève} --  Hôpital Argenteuil\\newline \\newline \\newline Facteurs prédictifs de  persistance de l allergie aux protéines de lait de vache. \\newline \\newline \\today"
+titlepage-theme:
+  title-fontstyle: ["Huge", "bfseries"]
+  title-color: novo
+  subtitle-color: novo
+  subtitle-fontstyle: ["huge"]
+  logo-size: "0.2\\textheight"
+  vrule-width: "0.1cm"
+  vrule-color: novo
+include-in-header:
+   text: |
+    \definecolor{novo}{HTML}{27484b}
+    \usepackage[locale = FR, per-mode = symbol]{siunitx}
+    \usepackage[section]{placeins}
+    \usepackage{arsenal}
+df-print : kable
+jss-pdf:
+  keep-tex: true
+pdf-engine: lualatex
+keep-tex: true
+number-sections: true
+toc: true
+lof: true
+lot: true
+fig-cap-location: bottom
+tbl-cap-location: top
+classoption: [french]
+papersize: a4
+editor: source
+#bibliography: stat.bib
+#cite-method: biblatex
+#csl: jama.csl
+#reference-location: margin
+#citation-location: margin
+license: "MIT"
+fig-width: 10
+echo: false
+warning: false
+message: false
+cache: false
+---
+
+\newpage
+
+::: {.callout-caution}
+
+"Appeler un statisticien après que l’expérience est terminée, c’est comme lui demander de faire une autopsie; il pourra seulement déterminer la cause de l’échec de l’expérience."
+
+Ronald A. Fisher, FRS (1890-1962)
+:::
+
+ \bigskip
+
+`
+
+```{r}
+#| label: setup
+
+rm(list = ls())
+#
+library(baseph)
+library(janitor)
+library(tidyverse)
+library(gtsummary)
+library(kableExtra)
+library(lubridate)
+library(kableExtra)
+library(forestmodel)
+library(labelled)
+library(epiDisplay)
+library(visdat)
+library(GGally)
+library(ggridges)
+library(colorspace)
+library(xlsx)
+library(apyramid)
+library(scales)
+#
+theme_gtsummary_language(language = "fr", decimal.mark = ",")
+options(OutDec = ",")
+#
+load("datas/allergo.RData")
+expx <- FALSE
+classeur <- "allergo2.xls"
+if (expx){system(paste0("rm -f ",classeur))}
+#
+cat <- list(all_continuous() ~ "wilcox.test", all_categorical() ~ "chisq.test")
+affl <- list(all_categorical()~"{n}/{N} ({p})")
+```
+
+```{r}
+#| label: macro_tabp
+
+tabp <- function(dfx, nn = 2, nom = "Acquisition de tolérance") {
+  nom <- paste0("**", nom, "**")
+  if (nn > 2) {cc <- "aov"} else {cc <- "wilcox.test"}
+  nn <- paste0("stat_",1:nn)
+  dfx |>
+    modify_header(label ~ " ") |>
+    modify_spanning_header(nn ~ nom) |>
+    add_p(test = list(all_continuous() ~ cc, all_categorical() ~ "chisq.test")) |>
+    add_overall() |>
+    bold_labels()
+}
+```
+
+
+
+# Description de la population
+
+```{r}
+#| label: nb-cas
+
+ncas <- nrow(tt)
+zz <- tt |> 
+  group_by(tolerance) |> 
+  count()
+```
+
+
+L'échantillon comporte `r nrow(tt)` cas  dont `r zz$n[1]` dans le groupe `Non` et `r zz$n[2]` dans le groupe `Oui`.
+
+
+
+## Démographie
+
+```{r}
+#| label: tbl-demo
+#| tbl-cap: Description de la population
+
+tt |> 
+  dplyr::select(sexe:dermite_atopique, dose_initiale_ito:age_fin_cohorte,tolerance) |> 
+  tbl_summary(missing = "no", 
+              by = tolerance,
+              value = list( prematurite ~"Oui",
+                            hypotrophie ~"Oui",
+                            allaitement ~"Oui",
+                            atopie_familiale ~"Oui",
+                            indication_xolaire ~"Oui")) |> 
+tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "demog1",
+exp = expx, lg = TRUE) 
+```
+
+\clearpage
+
+## Asthme & allergie respiratoire
+
+
+
+```{r}
+#| label: tbl-respi2
+#| tbl-cap: Allergies respiratoires
+
+tt |> 
+  dplyr::select(asthme, alergie_respiratoire, rhinoconjonctivite,  tolerance) |>
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              value = list(alergie_respiratoire ~"Oui")
+              ) |> 
+tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "respi2",
+exp = expx) 
+```
+
+```{r}
+#| label: tbl-respi1
+#| tbl-cap: Allergènes respiratoires
+
+tt |> 
+  dplyr::select(starts_with("resp_"), tolerance) |>
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              value = list(everything() ~"Oui")
+              ) |> 
+tabp() |> 
+  add_q(method = "fdr") |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "respi1",
+exp = expx, lg = TRUE) 
+```
+
+## Allergies alimentaires
+
+```{r}
+#| label: tbl-alim1
+#| tbl-cap: Allergènes alimentaires
+
+tt |> 
+  dplyr::select(starts_with("alim_"), tolerance) |>
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              value = list(everything() ~"Oui")
+              ) |> 
+tabp() |> 
+   add_q(method = "fdr") |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "alim1",
+exp = expx, lg = TRUE) 
+```
+
+\newpage
+## Bilan clinique & biologique
+
+```{r}
+#| label: tbl-bilan1
+#| tbl-cap: Bilan clinique & biologique
+
+tt |> 
+  dplyr::select(fass_clinique: tryptasemie, tolerance) |>
+  tbl_summary(missing = "no", 
+              by = tolerance)|> 
+tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "bilan1",
+exp = expx, lg = TRUE) 
+```
+
+# Objectif principal
+
+
+```{r}
+#| label: tbl-princi1
+#| tbl-cap: Bilan clinique & biologique
+
+tt |> 
+  dplyr::select(age_premiere_reaction, sexe, atopie_familiale,prematurite, hypotrophie, dermite_atopique, tests_cutanes, i_ge_lait_vache, tryptasemie, dose_initiale_ito, accident_ito, tolerance) |>
+  tbl_summary(missing = "no", 
+              value = list(3:5 ~"Oui"),
+              by = tolerance)|> 
+tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "princi1",
+exp = expx) 
+```
+
+
+```{r}
+#| label: fig-acc_ito
+#| fig-cap: Accident en cours de l'ITO (FASS)
+
+  tt |>
+  drop_na(accident_ito) |>
+  ggplot() +
+  aes(x = tolerance, fill = accident_ito) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = percent) +
+      labs(title = "Accidents ITO & acquisition de tolérance",
+         x = "Acquisition de tolérance",
+         y = "%",
+         fill = "Accident",
+) +
+    theme_light() +
+    colorspace::scale_fill_discrete_qualitative(palette = "Dark 3") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title.x = element_text(size = 12),
+      legend.title = element_text(size = 12),
+      axis.title.y = element_text(
+        size = 12,
+        angle = 0,
+        vjust = .5
+      ),
+      axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      legend.position = "right"
+    )
+```
+
+
+::: {.callout-note}
+Je n'ai pas trouvé la variable correspondante à `sévérité de la réaction initiale`.
+:::
+
+# Critères secondaires
+
+## Allergies respiratoires multiples
+
+```{r}
+#| label: tbl-respimulti
+#| tbl-cap: Allergies respiratoires multiples
+
+zz <- tt |> 
+  dplyr::select(starts_with("resp_")) |> 
+          mutate_all(as.numeric) |>
+  mutate_all(~ . -1) |> 
+  rowwise() %>% 
+  mutate(tot = sum(c_across(1:7))) |> 
+ungroup()
+zz$tolerance <- tt$tolerance
+var_label(zz$tot) <- "Nb d'allergies respiratoires" 
+
+zz |> 
+  dplyr::select(tot, tolerance) |> 
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              ) |> 
+  tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "respimulti",
+exp = expx) 
+```
+
+```{r}
+#| label: fig-respimulti
+#| fig-cap: Allergies respiratoires multiples
+
+  zz |>
+  mutate(tot = as.factor(tot)) |>
+  ## Réordonnancement de zz$tot
+mutate(tot = 
+  fct_relevel( tot,
+    "6", "3", "2", "1", "0"
+  )) |> 
+  ggplot() +
+  aes(x = tolerance, fill = tot) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = percent) +
+      labs(title = "Nb d'allergies respiratoires & acquisition de tolérance",
+         x = "Acquisition de tolérance",
+         y = "%",
+         fill = "Nb d'allergie respiratoires",
+) +
+    theme_light() +
+    colorspace::scale_fill_discrete_qualitative(palette = "Dark 3") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title.x = element_text(size = 12),
+      legend.title = element_text(size = 12),
+      axis.title.y = element_text(
+        size = 12,
+        angle = 0,
+        vjust = .5
+      ),
+      axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      legend.position = "right"
+    )
+```
+
+
+## Allergies alimentaires multiples
+
+```{r}
+#| label: tbl-alimmulti
+#| tbl-cap: Allergies alimentaires multiples
+
+zz <- tt |> 
+  dplyr::select(starts_with("alim")) |> 
+          mutate_all(as.numeric) |>
+  mutate_all(~ . -1) |> 
+  rowwise() %>% 
+  mutate(tot = sum(c_across(1:20))) |> 
+  mutate(tot = cut(tot,
+  include.lowest = TRUE,
+  right = FALSE,
+  dig.lab = 4,
+  breaks = c(0, 1, 2, 5, 10, 20),
+  labels = c("0","1" ,"2-5", "6-10", "> 10"))
+)
+
+zz$tolerance <- tt$tolerance
+var_label(zz$tot) <- "Nb d'allergies alimentaires" 
+zz |> 
+    dplyr::select(tot, tolerance) |>   
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              ) |> 
+  tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "alimmulti",
+exp = expx) 
+```
+
+
+```{r}
+#| label: fig-alimmulti
+#| fig-cap: Allergies alimentaires multiples
+
+  zz |>
+  ## Réordonnancement de zz$tot
+mutate(tot = fct_relevel(tot,
+    "> 10", "6-10", "2-5", "1", "0"
+  )) |> 
+  ggplot() +
+  aes(x = tolerance, fill = tot) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = percent) +
+      labs(title = "Nb d'allergies alimentaires & acquisition de tolérance",
+         x = "Acquisition de tolérance",
+         y = "%",
+         fill = "Nb d'allergie alimentaire",
+) +
+    theme_light() +
+    colorspace::scale_fill_discrete_qualitative(palette = "Dark 3") +
+    theme(
+      plot.title = element_text(size = 16, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title.x = element_text(size = 12),
+      legend.title = element_text(size = 12),
+      axis.title.y = element_text(
+        size = 12,
+        angle = 0,
+        vjust = .5
+      ),
+      axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      legend.position = "right"
+    )
+rm(zz)
+```
+
+## Multimorbidité
+
+-multimorbidite:
+Asthme
+Dermatite atopique
+Sensibilisation aux aeroallergene(pollens acariens phanères de chats et chiens…)
+Rhinite
+
+```{r}
+#| label: tbl-multimorbidite
+#| tbl-cap: Multimorbidité
+
+zz <- tt |> 
+  mutate(asthme = ifelse(asthme != "Non", "Oui", "Non"),
+         dermite_atopique = ifelse(dermite_atopique != "Non", "Oui", "Non"),
+rhinoconjonctivite = ifelse(rhinoconjonctivite != "Non", "Oui", "Non")) |> 
+  dplyr::select(c(asthme, dermite_atopique, rhinoconjonctivite, alergie_respiratoire)) |>
+  mutate_all(as.factor) |>
+            mutate_all(as.numeric) |>
+  mutate_all(~ . -1) |> 
+  rowwise() %>% 
+  mutate(tot = sum(c_across(1:4))) |> 
+  mutate(tot = as.factor(tot)) |> 
+  mutate(tot = fct_relevel(tot,
+    "0", "1", "2", "3", "4"
+  ))
+
+  zz$tolerance <- tt$tolerance
+  var_label(zz$tot) <- "Nb d'atteintes"
+  
+zz |> 
+  dplyr::select(tolerance, tot) |> 
+  tbl_summary(missing = "no", 
+              by = tolerance, 
+              ) |> 
+  tabp()
+```
+## Évolution de la tolérance
+**Comparer  au sein du groupe guéri les facteurs et les comorbidités de sévérité : enfant ayant mis plus de temps pour acquérir la tolérance aux PLV: pourcentage d acquisition de lait de vache à 1 an 2 ans 3 ans 4 ans 5 ans 6 ans 7 ans et 8 ans du début de l immunothérapie orale.**
+
+Je n'ai pas de données de suivi pour faire cette analyse. De plus vu le très faible nombre de cas aucune conclusion ne pourra être tirée. 
+
+
+```{r}
+#| label: tbl-severite
+#| tbl-cap: Âge en fin de cohorte & acquisition de tolérance
+
+tt |> 
+mutate(age_fin_cohorte = cut(age_fin_cohorte,
+  include.lowest = TRUE,
+  right = FALSE,
+  dig.lab = 4,
+  breaks = c(0, 2, 5, 10, 50), 
+  labels = c("< 3", "3-5", "6-10", "> 10"))) |> 
+  dplyr::select(tolerance, age_fin_cohorte) |>
+    tbl_summary(missing = "no", 
+              by = tolerance, 
+              ) |> 
+  tabp() |> 
+  pexptabph(nomfich = classeur,
+nomsheet = "severite",
+exp = expx) 
+
+```
+
+# Technique 
+
+Vu la faible taille de l'échantillon aucune hypothèse de normalité ne sera faite & des tests non paramétriques ont  été utilisés.
+
+Les données discrètes ont été présentés en pourcentage puis comparées par le test du $\Chi^2$ de Pearson avec correction de Yates si nécessaire. Les données numériques ont été présentées par leur médiane & les quartiles puis comparées par le test non paramétrique de Wilcoxon Mann Whitney ou une analyse de variance (ANOVA) si le critère de tri avait plus de deux modalités. En raison du grand nombre de tests réalisés sur les listes d'allergènes respiratoires ou alimentaires, un ajustement selon la méthode de Benjamini & Hochberg a été réalisé (colonne `q-valeur`).
+
+Les analyse en régression ont été réalisées dans un premier temps en incorporant toutes les variables significatives au seuil de 0,20 dans un modèle de régression puis une recherche du meilleur modèle en pas-à-pas descendant basé sur l'AIC a été effectuée. Néanmoins les variables majeures (groupe...) ont été forcées.
+
+L'analyse statistique a été réalisée avec le logiciel **R** [@rstat] & diverses librairies en particulier celles du `tidyverse` [@tidy] & `baseph` [@baseph].
+
